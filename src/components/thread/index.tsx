@@ -64,27 +64,26 @@ function ScrollToBottom(props: { className?: string }) {
 }
 
 
-interface VoiceMessageData {
-  id: string;
-  type: "voice";
-  isUser: boolean;
-  audioUrl: string;
-  timestamp: number;
-}
-
-interface TextMessageData {
-  id: string;
-  type: "text";
-  isUser: boolean;
-  content: string;
-  timestamp: number;
-}
+type MessageData = 
+  | {
+      id: string;
+      type: "voice";
+      isUser: boolean;
+      audioUrl: string;
+      timestamp: number;
+    }
+  | {
+      id: string;
+      type: "text";
+      isUser: boolean;
+      content: string;
+      timestamp: number;
+    };
 
 export function Thread() {
   const [input, setInput] = useState("");
   const [language, setLanguage] = useState<Language>("en");
-  const [voiceMessages, setVoiceMessages] = useState<VoiceMessageData[]>([]);
-  const [textMessages, setTextMessages] = useState<TextMessageData[]>([]);
+  const [messages, setMessages] = useState<MessageData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
 
@@ -94,38 +93,38 @@ export function Thread() {
       
       // Create audio URL for user's voice message
       const userAudioUrl = URL.createObjectURL(audioBlob);
-      const userVoiceMessage: VoiceMessageData = {
+      const userVoiceMessage: MessageData = {
         id: uuidv4(),
         type: "voice",
         isUser: true,
         audioUrl: userAudioUrl,
         timestamp: Date.now(),
       };
-      setVoiceMessages((prev) => [...prev, userVoiceMessage]);
+      setMessages((prev) => [...prev, userVoiceMessage].sort((a, b) => a.timestamp - b.timestamp));
 
       // Send voice message to API
       const response = await sendVoiceMessage(audioBlob, language);
 
       // If the API returns an audio URL, create a voice message; otherwise, use text
       if (response.audioUrl) {
-        const aiVoiceMessage: VoiceMessageData = {
+        const aiVoiceMessage: MessageData = {
           id: uuidv4(),
           type: "voice",
           isUser: false,
           audioUrl: response.audioUrl,
           timestamp: Date.now(),
         };
-        setVoiceMessages((prev) => [...prev, aiVoiceMessage]);
+        setMessages((prev) => [...prev, aiVoiceMessage].sort((a, b) => a.timestamp - b.timestamp));
       } else {
         // If no audio URL, add as text message
-        const aiTextMessage: TextMessageData = {
+        const aiTextMessage: MessageData = {
           id: uuidv4(),
           type: "text",
           isUser: false,
           content: response.text,
           timestamp: Date.now(),
         };
-        setTextMessages((prev) => [...prev, aiTextMessage]);
+        setMessages((prev) => [...prev, aiTextMessage].sort((a, b) => a.timestamp - b.timestamp));
       }
     } catch (error) {
       toast.error("Failed to send voice message", {
@@ -158,28 +157,29 @@ export function Thread() {
       setIsLoading(true);
 
       // Add user message immediately
-      const userMessage: TextMessageData = {
+      const userMessage: MessageData = {
         id: uuidv4(),
         type: "text",
         isUser: true,
         content: input.trim(),
         timestamp: Date.now(),
       };
-      setTextMessages((prev) => [...prev, userMessage]);
+      setMessages((prev) => [...prev, userMessage].sort((a, b) => a.timestamp - b.timestamp));
+      const userInput = input.trim();
       setInput("");
 
       // Send text message to /ask endpoint
-      const responseText = await sendTextMessage(userMessage.content);
+      const responseText = await sendTextMessage(userInput);
 
       // Add AI response
-      const aiMessage: TextMessageData = {
+      const aiMessage: MessageData = {
         id: uuidv4(),
         type: "text",
         isUser: false,
         content: responseText,
         timestamp: Date.now(),
       };
-      setTextMessages((prev) => [...prev, aiMessage]);
+      setMessages((prev) => [...prev, aiMessage].sort((a, b) => a.timestamp - b.timestamp));
     } catch (error) {
       toast.error("Failed to send message", {
         description: error instanceof Error ? error.message : "Unknown error",
@@ -203,40 +203,32 @@ export function Thread() {
               contentClassName="pt-8 pb-16 max-w-3xl mx-auto flex flex-col gap-4 w-full"
               content={
                 <>
-                  {/* Render voice messages */}
-                  {voiceMessages.map((voiceMsg) => (
+                  {/* Render all messages in chronological order */}
+                  {messages.map((message) => (
                     <div
-                      key={voiceMsg.id}
+                      key={message.id}
                       className={cn(
                         "flex",
-                        voiceMsg.isUser ? "justify-end" : "justify-start",
+                        message.isUser ? "justify-end" : "justify-start",
                       )}
                     >
-                      <VoiceMessage
-                        audioUrl={voiceMsg.audioUrl}
-                        isUser={voiceMsg.isUser}
-                      />
-                    </div>
-                  ))}
-                  {/* Render text messages */}
-                  {textMessages.map((textMsg) => (
-                    <div
-                      key={textMsg.id}
-                      className={cn(
-                        "flex",
-                        textMsg.isUser ? "justify-end" : "justify-start",
+                      {message.type === "voice" ? (
+                        <VoiceMessage
+                          audioUrl={message.audioUrl}
+                          isUser={message.isUser}
+                        />
+                      ) : (
+                        <div
+                          className={cn(
+                            "rounded-2xl px-4 py-2 max-w-xs",
+                            message.isUser
+                              ? "bg-blue-500 text-white"
+                              : "bg-gray-100 text-gray-900",
+                          )}
+                        >
+                          <p className="whitespace-pre-wrap">{message.content}</p>
+                        </div>
                       )}
-                    >
-                      <div
-                        className={cn(
-                          "rounded-2xl px-4 py-2 max-w-xs",
-                          textMsg.isUser
-                            ? "bg-blue-500 text-white"
-                            : "bg-gray-100 text-gray-900",
-                        )}
-                      >
-                        <p className="whitespace-pre-wrap">{textMsg.content}</p>
-                      </div>
                     </div>
                   ))}
                   {(isLoading || isProcessingVoice) && (
